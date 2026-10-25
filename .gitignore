@@ -1,0 +1,26 @@
+# Build output
+Debug/
+Release/
+*.o
+*.d
+*.su
+*.cyclo
+*.elf
+*.map
+*.list
+*.bin
+*.hex
+
+# ST drivers - regenerated from the .ioc file (Project -> Generate Code)
+Drivers/
+
+# Machine-specific IDE files
+*.launch
+.settings/language.settings.xml
+.settings/com.st.stm32cube.ide.mcu.sfrview.prefs
+.metadata/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
