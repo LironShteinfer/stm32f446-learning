@@ -18,11 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "usart2.h"
-#include <stdbool.h>
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "usart2.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,9 +30,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define BOOL int
-#define TRUE 1
-#define FALSE 0
+#define LED_PIN        5U     /* LD2 on PA5 */
+#define DEBOUNCE_MS    200U   /* ignore button bounces shorter than this */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,10 +53,23 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/* User button (PC13) interrupt: toggles the LED, with a simple time-based debounce. */
 void EXTI15_10_IRQHandler(void)
 {
-	EXTI-> PR |= 0x00002000;
-	GPIOA->ODR ^= 0x00000020;
+	static uint32_t last_press_ms = 0;
+
+	if (EXTI->PR & EXTI_PR_PR13)
+	{
+		/* PR is write-1-to-clear: write only our bit, so other pending lines are not cleared. */
+		EXTI->PR = EXTI_PR_PR13;
+
+		uint32_t now = HAL_GetTick();
+		if (now - last_press_ms >= DEBOUNCE_MS)
+		{
+			last_press_ms = now;
+			GPIOA->ODR ^= (1U << LED_PIN);
+		}
+	}
 }
 /* USER CODE END 0 */
 
@@ -93,40 +103,25 @@ int main(void)
 
   /* Initialize all configured peripherals */
   /* USER CODE BEGIN 2 */
-  	  	BOOL button_was_pressed;
-  	  	BOOL button_is_pressed = FALSE;
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOCEN;
+  RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
 
+  /* PA5 (LD2) as a push-pull output */
+  GPIOA->MODER &= ~GPIO_MODER_MODER5;
+  GPIOA->MODER |=  GPIO_MODER_MODER5_0;
 
-  	  	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOCEN;
-  	  	RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
-  	  	RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
-  	  	RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
+  /* PC13 (blue user button, input by default) -> EXTI13 on the falling edge */
+  SYSCFG->EXTICR[3] &= ~SYSCFG_EXTICR4_EXTI13;
+  SYSCFG->EXTICR[3] |=  SYSCFG_EXTICR4_EXTI13_PC;
+  EXTI->FTSR |= EXTI_FTSR_TR13;
+  EXTI->IMR  |= EXTI_IMR_MR13;
+  NVIC_EnableIRQ(EXTI15_10_IRQn);
 
-
-  	  	TIM2->PSC = 15999;
-  	  	TIM2->ARR = 5000-1;
-  	  	TIM2->EGR |= TIM_EGR_UG;
-  	  	TIM2->CR1 |= TIM_CR1_CEN;
-
-/*
-  	  	GPIOA-> MODER &= ~GPIO_MODER_MODER5;
-  	  	GPIOA-> MODER |= GPIO_MODER_MODER5_0;
-  	  	GPIOA-> OTYPER &= ~GPIO_OTYPER_OT_5;*/
-  	  	GPIOA-> MODER |= 0x00000400;
-
-  	  	SYSCFG->EXTICR[3] &= ~(0x000000F0);
-  	  	SYSCFG->EXTICR[3]  |= 0x00000020;
-  	  	EXTI-> FTSR |= 0x00002000;
-  	  	EXTI-> IMR |= 0x00002000;
-
-  	  	NVIC_EnableIRQ(EXTI15_10_IRQn);
-
-  	  	USART2_init();
-  	  	USART2_printCharacter(':');
-  	  	USART2_printCharacter(')');
-  	  	USART2_printCharacter('\n');
-  	  	USART2_print("Hello!\n");
-  	  	printUSART("I am your new STM32F%dRE \n",446);
+  USART2_init();
+  USART2_printCharacter(':');
+  USART2_printCharacter(')');
+  USART2_print("\r\nHello!\r\n");
+  printUSART("I am your new STM32F%dRE\r\n", 446);
 
   /* USER CODE END 2 */
 
@@ -135,26 +130,6 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-
-	  	/*button_was_pressed = button_is_pressed;
-	  	button_is_pressed = !(GPIOC-> IDR & 0x00002000);
-	  	if(button_is_pressed && !button_was_pressed)
-	  	{
-	  		GPIOA-> ODR ^= 0x00000020;
-	  	}
-
-*/
-
-/*
-	  	if(TIM2->SR & TIM_SR_UIF)
-	  	{
-	  		TIM2->SR &= ~TIM_SR_UIF;
-
-	  		GPIOA->ODR ^= GPIO_ODR_ODR_5;
-	  	}
-
-
-*/
 
     /* USER CODE BEGIN 3 */
   }

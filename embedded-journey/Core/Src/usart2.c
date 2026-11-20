@@ -1,83 +1,85 @@
 /*
-*
-*
-*
-*
-*
-*/
-
+ * usart2.c - minimal register-level USART2 driver.
+ * PA2 = TX, PA3 = RX (routed to the ST-LINK virtual COM port), 9600 baud, 8N1.
+ * Assumes the system clock is the 16 MHz HSI with APB1 undivided.
+ */
 
 #include <stdarg.h>
 #include <stdio.h>
 #include "stm32f446xx.h"
 #include "usart2.h"
 
+#define USART2_PCLK_HZ   16000000U
+#define USART2_BAUD      9600U
 
-static char A_Buffer[URAT2_SIZE_OF_PRINT_BUFFER];
+static char print_buffer[USART2_PRINT_BUFFER_SIZE];
 
-void printUSART(char *p_format, ...)
+/* printf-style output over USART2. vsnprintf truncates instead of
+ * writing past the end of the buffer. */
+void printUSART(const char *p_format, ...)
 {
-	va_list p_variables;
-	va_start(p_variables, p_format);
-	(void)vsprintf(A_Buffer, p_format, p_variables);
-	va_end(p_variables);
-	USART2_print(A_Buffer);
+	va_list args;
+	va_start(args, p_format);
+	(void)vsnprintf(print_buffer, sizeof(print_buffer), p_format, args);
+	va_end(args);
+	USART2_print(print_buffer);
 }
 
 void USART2_init(void)
 {
-	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;// Enable GPIOA clock.
-	RCC->APB1ENR |= RCC_APB1ENR_USART2EN; // Enable USART2 clock.
+	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;    /* GPIOA clock */
+	RCC->APB1ENR |= RCC_APB1ENR_USART2EN;   /* USART2 clock */
 
-	// Configure GPIOA pins 2 and 3 as alternate function 7, which is USART2.
-	GPIOA->MODER &= ~(0xF << 4);
-	GPIOA->MODER |= (0xA << 4);
-	GPIOA->AFR[0] &= ~(0xFF << 8);
-	GPIOA->AFR[0] |= 0x00007700;
-	// AFR[[0] is the same as AFRL in the reference manual.
+	/* PA2 and PA3 in alternate-function mode, AF7 = USART2.
+	 * AFR[0] is AFRL in the reference manual. */
+	GPIOA->MODER  &= ~(GPIO_MODER_MODER2 | GPIO_MODER_MODER3);
+	GPIOA->MODER  |=  (GPIO_MODER_MODER2_1 | GPIO_MODER_MODER3_1);
+	GPIOA->AFR[0] &= ~((0xFU << (2U * 4U)) | (0xFU << (3U * 4U)));
+	GPIOA->AFR[0] |=  ((7U << (2U * 4U)) | (7U << (3U * 4U)));
 
-
-	USART2->BRR = 0x0682; // (System clock rate(16) + 10^6) / baud rate (9600)
-	USART2->CR1 = (1UL << 13) | (1UL << 3) | (1UL << 2); // Bit number 13 enable and bit num3 enable;
-
+	/* Oversampling by 16: BRR = PCLK / baud, rounded (16 MHz / 9600 = 1667 = 0x683) */
+	USART2->BRR = (USART2_PCLK_HZ + USART2_BAUD / 2U) / USART2_BAUD;
+	USART2->CR1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;   /* enable USART, TX and RX */;
 }
 
 char USART2_read(void)
 {
-	while(!(USART2->SR & USART_SR_RXNE));
-
-	return(char) USART2->DR;
-
+	while (!(USART2->SR & USART_SR_RXNE));  /* wait for a received byte */
+	return (char)USART2->DR;
 }
 
-void USART2_readString(char* buf, int maxLen)
+/* Reads one line (up to maxLen - 1 characters) into buf.
+ * Leading CR/LF are skipped, so terminals that send "\r\n" do not
+ * produce an empty command after every line. */
+void USART2_readString(char *buf, int maxLen)
 {
-    int i = 0;
-    char c;
+	int i = 0;
+	char c;
 
-    while(i < maxLen - 1)
-    {
-        c = USART2_read();
-        if(c == '\r' || c == '\n') break;
-        buf[i++] = c;
-    }
-    buf[i] = '\0';
-}
+	do {
+		c = USART2_read();
+	} while (c == '\r' || c == '\n');
 
-void USART2_print(const char *p_data, ...)
-{
-	while(*p_data != '\0')
+	while (i < maxLen - 1)
 	{
-		while(!(USART2->SR & 0x00000080));
-		USART2->DR = *p_data;
+		if (c == '\r' || c == '\n') break;
+		buf[i++] = c;
+		c = USART2_read();
+	}
+	buf[i] = '\0';
+}
+
+void USART2_print(const char *p_data)
+{
+	while (*p_data != '\0')
+	{
+		USART2_printCharacter(*p_data);
 		p_data++;
 	}
 }
 
 void USART2_printCharacter(char c)
 {
-	while(!(USART2->SR & 0x00000080)); // The TXE bit is bit 7 in the register ISR.
-	USART2->DR = c;
+	while (!(USART2->SR & USART_SR_TXE));   /* wait until the data register is empty */
+	USART2->DR = (uint8_t)c;
 }
-
-

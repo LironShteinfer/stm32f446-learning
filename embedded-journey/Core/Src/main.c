@@ -18,14 +18,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <stdio.h>
-#include <string.h>
-#include <stdint.h>
-#include "stm32f4xx.h"
-#include "usart2.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <string.h>
+#include "usart2.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,7 +31,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define LED_PIN          5U     /* LD2 on PA5 */
+#define BLINK_PERIOD_MS  250U
+#define CMD_MAX_LEN      16
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -69,8 +67,6 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
-    /* Loop forever */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -91,30 +87,22 @@ int main(void)
 
   /* Initialize all configured peripherals */
   /* USER CODE BEGIN 2 */
+  /* Full access to the FPU (coprocessors CP10 and CP11) */
+  SCB->CPACR |= (3UL << (10U * 2U)) | (3UL << (11U * 2U));
 
-  SCB->CPACR |= (3UL << 10*2) | (3UL << 11*2);
+  USART2_init();   /* clocks, PA2/PA3 alternate function, baud rate, TX + RX */
 
-  USART2_init();
-
-  RCC->AHB1ENR |= (0x1UL << (0U));
-  RCC->APB1ENR |= (0x1UL << 17U);
-  USART2->CR1 = 0x00002008;
-
-	/*GPIOA->MODER &= ;*/
-  GPIOA->MODER |= (1UL << 10);
-  GPIOA->MODER &= ~(0xF << 4);
-  GPIOA->MODER |=  (0xA << 4);
-  GPIOA->AFR[0] |= (0x77 << 8);
-  USART2->CR1 = (1UL << 13) | (1UL << 3) | (1UL << 2);
-
-
+  /* PA5 (LD2) as a push-pull output */
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+  GPIOA->MODER &= ~GPIO_MODER_MODER5;
+  GPIOA->MODER |=  GPIO_MODER_MODER5_0;
 
   USART2_printCharacter(':');
   USART2_printCharacter(')');
-  USART2_printCharacter('\n');
-  USART2_print("Hello!\n");
-  printUSART("I am your new STM32F%dRE! \n",446);
-  char str[16];
+  USART2_print("\r\nHello!\r\n");
+  printUSART("I am your new STM32F%dRE!\r\n", 446);
+
+  char cmd[CMD_MAX_LEN];
   int blink_mode = 0;
   /* USER CODE END 2 */
 
@@ -122,34 +110,34 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-      if (blink_mode == 0)
+      if (!blink_mode)
       {
           printUSART("\r\nPlease enter your choice (On / Off / Blink):\r\n");
-          USART2_readString(str, 16);
+          USART2_readString(cmd, CMD_MAX_LEN);
 
-          if(strcmp(str, "On") == 0){
-              GPIOA->ODR |= (1UL << 5);
+          if (strcmp(cmd, "On") == 0) {
+              GPIOA->BSRR = (1U << LED_PIN);            /* atomic set */
               printUSART("LED is ON\r\n");
           }
-          else if(strcmp(str, "Off") == 0){
-              GPIOA->ODR &= ~(1UL << 5);
+          else if (strcmp(cmd, "Off") == 0) {
+              GPIOA->BSRR = (1U << (LED_PIN + 16U));    /* atomic reset */
               printUSART("LED is OFF\r\n");
           }
-          else if(strcmp(str, "Blink") == 0 ){
+          else if (strcmp(cmd, "Blink") == 0) {
               blink_mode = 1;
               printUSART("Entering Blink Mode! (Press any key to stop)\r\n");
           }
-          else{
-              printUSART("Unknown command: %s\r\n", str);
+          else {
+              printUSART("Unknown command: %s\r\n", cmd);
           }
       }
       else
       {
-          GPIOA->ODR ^= (1UL << 5);
-          for(volatile int i = 0; i < 500000; i++);
+          GPIOA->ODR ^= (1U << LED_PIN);
+          HAL_Delay(BLINK_PERIOD_MS);
 
           if (USART2->SR & USART_SR_RXNE) {
-              (void)USART2->DR;
+              (void)USART2->DR;   /* discard the key that stopped blinking */
               blink_mode = 0;
               printUSART("Blink Mode Stopped.\r\n");
           }
